@@ -7,20 +7,32 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\""
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.5",
     "@zip.js/zip.js": "^2.25.0",
+    "js-md5": "^0.11.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@tauri-apps/cli": "^2.12.6",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "eslint": "^10.15.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "jsdom": "^29.1.1",
+    "prettier": "^3.10.1",
     "typescript": "^5.7.2",
-    "vite": "^6.0.5"
+    "typescript-eslint": "^8.73.0",
+    "vite": "^6.0.5",
+    "vitest": "^4.1.12"
   }
 }
