@@ -591,7 +591,8 @@ html.tauri .traffic-lights {
   align-items: center;
   justify-content: space-between;
   height: 52px;
-  padding: 0 12px 0 20px;
+  /* 左侧留出 macOS 原生交通灯的位置（与 .reader-bar 一致） */
+  padding: 0 12px 0 108px;
   border-bottom: 1px solid var(--separator);
   font-size: 15px;
   font-weight: 600;
