@@ -18,10 +18,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { BookMetaLite, BookRecord } from './core/Book'
-import { addBook, deleteBook, getBook, listBooks } from './core/Storage'
-import { clearProgress } from './core/progress'
+import { getBook, listBooks } from './core/Storage'
 import { formatError } from './core/errors'
 import { importFiles, summarizeImport, type ImportResult } from './services/importService'
+import { removeBook, restoreBooks, type PendingDelete } from './services/deleteService'
 import Library from './components/Library'
 import ReaderView from './components/Reader/ReaderView'
 import Toast, { toastDuration, type ToastState } from './components/Toast'
@@ -68,7 +68,7 @@ export default function App() {
    * 记录已从数据库移除，撤销窗口内若不恢复，超时后 Blob 由垃圾回收，
    * 数据彻底丢失（内存优先：暂存的是引用，不留副本）。
    */
-  const pendingDeleteRef = useRef<BookRecord[]>([])
+  const pendingDeleteRef = useRef<PendingDelete[]>([])
   /** 隐藏的文件选择 input */
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -138,10 +138,10 @@ export default function App() {
   const handleDelete = useCallback((book: BookMetaLite) => {
     void (async () => {
       try {
-        await deleteBook(book.id)
-        pendingDeleteRef.current.push(await getBook(book.id).then(r => r ?? { ...book, file: new Blob() }))
+        // 管线见 deleteService：先取完整记录再删除，保留进度快照供撤销恢复
+        const pending = await removeBook(book)
+        pendingDeleteRef.current.push(pending)
         const count = pendingDeleteRef.current.length
-        clearProgress(book.hash)
         setBooks(await listBooks())
         // 连续删除多本时批量表述；toast 显示撤销按钮
         setToast({
@@ -162,7 +162,8 @@ export default function App() {
       try {
         const pending = pendingDeleteRef.current
         pendingDeleteRef.current = []
-        for (const record of pending) await addBook(record)
+        // 原样写回完整记录（含 file Blob）+ 进度快照，见 deleteService
+        await restoreBooks(pending)
         setBooks(await listBooks())
         setToast(null)
       } catch (err) {
