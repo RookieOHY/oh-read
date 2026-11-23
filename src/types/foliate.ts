@@ -47,6 +47,11 @@ export interface FoliateBook {
   /** 把 sectionId + fragment 解析为文档内锚点节点 */
   getTOCFragment?: (doc: Document, id: string) => Node | null
   /**
+   * 把 TOC 的 href 解析为跳转目标 { index, anchor? }。
+   * view.goTo(href) 最终走这里——不实现则目录点击无效（EPUB 自带，TXT 需自行实现）。
+   */
+  resolveHref?: (href: string) => { index: number; anchor?: (doc: Document) => Node | null } | null
+  /**
    * 一次性释放资源（非 foliate 接口，是我们自己的扩展）：
    * 渲染结束时由 ReaderView 调用，revoke 所有 blob URL。
    */

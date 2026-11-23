@@ -12,8 +12,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { BookRecord } from '../../core/Book'
+import type { FoliateTocItem } from '../../types/foliate'
 import { detectFormat } from '../../providers/epubMeta'
 import { loadProgress, saveProgress, type ReadingProgress } from '../../core/progress'
+import TocView from './TocView'
+import { Icon } from '../Icons'
 
 interface Props {
   book: BookRecord
@@ -37,6 +40,12 @@ export default function ReaderView({ book, onBack }: Props) {
   const lastDetailRef = useRef<{ index: number; fraction: number; overall: number } | null>(null)
   /** 当前书的 foliate book 对象（TXT 有 dispose 逻辑，卸载时统一释放 blob URL） */
   const bookObjRef = useRef<any>(null)
+  /** 目录抽屉开关 */
+  const [tocOpen, setTocOpen] = useState(false)
+  /** 目录数据（book.toc，打开后取一次） */
+  const [toc, setToc] = useState<FoliateTocItem[]>([])
+  /** 当前章节 href（relocate 的 tocItem.href → 目录高亮） */
+  const [currentHref, setCurrentHref] = useState<string | null>(null)
 
   // 打开书籍：组件挂载 / 书籍切换时执行
   useEffect(() => {
@@ -45,6 +54,8 @@ export default function ReaderView({ book, onBack }: Props) {
     // 翻页键处理：主文档与章节 iframe 文档共用同一个处理器
     //（定义在 effect 作用域，保证 cleanup 可以正确解绑）
     const onKey = (e: KeyboardEvent) => {
+      // 目录抽屉打开时翻页键交给目录（TocView 会 stopPropagation，这里做双保险）
+      if (e.defaultPrevented) return
       if (e.key === 'ArrowLeft' || e.key === 'h') view?.goLeft()
       else if (e.key === 'ArrowRight' || e.key === 'l') view?.goRight()
     }
@@ -62,7 +73,9 @@ export default function ReaderView({ book, onBack }: Props) {
         // relocate = 阅读位置变化：换算全书比例并节流保存
         view.addEventListener('relocate', (e: any) => {
           if (cancelled) return
-          const { index, fraction } = e.detail
+          const { index, fraction, tocItem } = e.detail
+          // 当前章节 href → 目录高亮（foliate 的 progress 引擎随 relocate 给出）
+          if (tocItem?.href) setCurrentHref(tocItem.href)
           // 章节权重表（打开后可用）：把"章内比例"换算成"全书比例"
           const sections: number[] = view.getSectionFractions?.() ?? []
           const start = sections[index] ?? 0
@@ -117,6 +130,8 @@ export default function ReaderView({ book, onBack }: Props) {
         } else {
           await view.goTo(0)
         }
+        // 取目录：EPUB/CBZ/TXT 的 book 对象都实现了 foliate 的 toc 接口
+        if (!cancelled) setToc(view.book?.toc ?? [])
         if (!cancelled) {
           setReady(true)
           // 焦点移入书页容器：屏幕阅读器能感知进入阅读视图，
@@ -147,6 +162,31 @@ export default function ReaderView({ book, onBack }: Props) {
     }
   }, [book.id])
 
+  // 目录抽屉：Esc 关闭（焦点在抽屉内或书页上都生效）
+  useEffect(() => {
+    if (!tocOpen) return
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        setTocOpen(false)
+        containerRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', onEsc, true)
+    return () => window.removeEventListener('keydown', onEsc, true)
+  }, [tocOpen])
+
+  /** 目录跳转：关抽屉并把焦点还给书页 */
+  const handleNavigate = useCallback(
+    (href: string) => {
+      void viewRef.current?.goTo(href)
+      setTocOpen(false)
+      containerRef.current?.focus()
+    },
+    [],
+  )
+
   /** 返回书架：先把当前进度补写一次再退出（退出不丢进度） */
   const handleBack = useCallback(() => {
     // 节流可能吞掉最后几页的进度：用最近一次 relocate 快照无条件补写
@@ -172,12 +212,41 @@ export default function ReaderView({ book, onBack }: Props) {
             <path d="M15 5l-7 7 7 7" />
           </svg>
         </button>
+        <button
+          className={`tool-btn ${tocOpen ? 'active' : ''}`}
+          title="目录"
+          aria-label="目录"
+          aria-expanded={tocOpen}
+          disabled={!toc.length}
+          onClick={() => setTocOpen(open => !open)}
+        >
+          <Icon name="toc" />
+        </button>
         <span className="reader-title">{book.title}</span>
         <span className="reader-percent">{percent}%</span>
       </header>
 
       {/* 书页渲染区：foliate-view 挂载点（tabable，便于焦点管理） */}
       <div className="reader-stage" ref={containerRef} tabIndex={-1} />
+
+      {/* 目录抽屉：蒙层 + 左侧抽屉（对齐 foliate demo 的 side-bar 交互） */}
+      {tocOpen && (
+        <div className="toc-overlay">
+          <div className="toc-dimming" onClick={() => setTocOpen(false)} aria-hidden="true" />
+          <aside className="toc-drawer" role="dialog" aria-label="目录">
+            <div className="toc-drawer-title">
+              <span>目录</span>
+              <button className="tool-btn" title="关闭目录" aria-label="关闭目录" onClick={() => setTocOpen(false)}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+                  <path d="M6 6l12 12M18 6L6 18" />
+                </svg>
+              </button>
+            </div>
+            <TocView toc={toc} currentHref={currentHref} onNavigate={handleNavigate} />
+          </aside>
+        </div>
+      )}
 
       {/* 打开中的遮罩（淡入完成前） */}
       {!ready && !error && (

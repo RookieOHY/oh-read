@@ -18,6 +18,7 @@ export type IconName =
   | 'moon'
   | 'laptop'
   | 'sidebar'
+  | 'toc'
 
 const iconPaths: Record<IconName, ReactNode> = {
   books: (
@@ -71,6 +72,12 @@ const iconPaths: Record<IconName, ReactNode> = {
     <>
       <rect x="3" y="4" width="18" height="16" rx="2" />
       <path d="M9.5 4v16" />
+    </>
+  ),
+  /** 目录图标：三条层次递减的横线（缩进表示章节层级） */
+  toc: (
+    <>
+      <path d="M4 6h16M4 12h11M4 18h13" />
     </>
   ),
 }

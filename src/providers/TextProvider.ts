@@ -275,6 +275,12 @@ export async function buildTxtBook(file: Blob, hash: string, fallbackTitle: stri
       subitems: [],
     })),
     pageList: [],
+    // 目录点击跳转：href 形如 "#3"，解析为第 3 章（foliate 的 view.goTo 内部走这里）
+    resolveHref(href: string) {
+      const index = Number(href.slice(1))
+      if (!Number.isInteger(index) || index < 0 || index >= chapters.length) return null
+      return { index, anchor: (doc: Document) => doc.getElementById(`oread-ch-${index}`) }
+    },
     // progress.js 所需的两个定位方法（不实现则全书进度引擎不会初始化）
     splitTOCHref(href: string) {
       return [href.slice(1), null]
