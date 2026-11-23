@@ -5,3 +5,7 @@ dist
 
 # Tauri
 src-tauri/target
+
+# 测试书籍（体积大的二进制，不入库）
+test-data/
+

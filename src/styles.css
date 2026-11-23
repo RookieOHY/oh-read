@@ -206,13 +206,136 @@ html.tauri .traffic-lights {
 /* Content */
 .content {
   flex: 1;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
   background: var(--bg-content);
+  min-width: 0;
+  overflow-y: auto;
+}
+
+/* 书架网格 */
+.shelf {
+  flex: 1;
+  padding: calc(var(--space) * 3);
+}
+
+.shelf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: calc(var(--space) * 3);
+}
+
+/* 单本书卡片 */
+.book-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
   min-width: 0;
 }
 
+.book-cover {
+  position: relative;
+  aspect-ratio: 2 / 3;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg-hover);
+  /* Apple 风格的轻投影 */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(0, 0, 0, 0.08);
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.book-card:hover .book-cover {
+  transform: translateY(-2px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.14), 0 8px 20px rgba(0, 0, 0, 0.12);
+}
+
+.book-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* 无封面时的占位：首字母 + 灰底 */
+.book-cover-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 40px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: linear-gradient(160deg, var(--bg-hover), var(--bg-active));
+}
+
+/* 悬停时浮现的删除按钮 */
+.book-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  line-height: 1;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.book-card:hover .book-delete { opacity: 1; }
+.book-delete:hover { background: rgba(0, 0, 0, 0.75); }
+
+.book-title {
+  font-size: 13px;
+  font-weight: 500;
+  /* 超过两行省略 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.book-author {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 拖拽导入的全屏蒙层 */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 122, 255, 0.12);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  pointer-events: none; /* 让 drop 事件落到窗口本身 */
+}
+
+.drop-overlay-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 24px;
+  border-radius: 14px;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 500;
+  background: rgba(0, 113, 227, 0.92);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+}
+
 .empty-state {
+  margin: auto;
   text-align: center;
   max-width: 320px;
   padding: 24px;
@@ -235,7 +358,6 @@ html.tauri .traffic-lights {
   letter-spacing: -0.02em;
   margin-bottom: 8px;
 }
-
 .empty-state p {
   font-size: 13px;
   line-height: 1.5;

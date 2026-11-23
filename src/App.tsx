@@ -1,4 +1,21 @@
-import { useEffect, useState, type ReactNode } from 'react'
+/**
+ * 应用外壳 + 书架页
+ *
+ * 结构：
+ *   标题栏（原生交通灯 + 工具按钮）
+ *   侧边栏（书架 / 正在阅读 / 书单 / 设置）
+ *   主内容区（书架网格 或 各页占位）
+ *
+ * 导入途径：
+ *   1. 工具栏「添加」按钮 → 系统文件选择器
+ *   2. 把文件直接拖进窗口（任意位置）
+ */
+
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import type { BookRecord } from './core/Book'
+import { addBook, deleteBook, getAllBooks } from './core/Storage'
+import { extractBookMeta, generateId } from './providers/epubMeta'
+import Library from './components/Library'
 
 type IconName =
   | 'books'
@@ -86,8 +103,8 @@ const NAV_ITEMS: { id: string; label: string; icon: IconName }[] = [
   { id: 'lists', label: '书单', icon: 'lists' },
 ]
 
+/** 非书架页的占位文案 */
 const PLACEHOLDERS: Record<string, { title: string; hint: string }> = {
-  library: { title: '书架', hint: '把书籍拖到这里，或点击左上角的「添加」按钮' },
   reading: { title: '正在阅读', hint: '打开一本书后，它会显示在这里' },
   lists: { title: '书单', hint: '创建书单来整理你的藏书' },
   settings: { title: '设置', hint: '外观、存储与快捷键设置' },
@@ -96,23 +113,106 @@ const PLACEHOLDERS: Record<string, { title: string; hint: string }> = {
 export default function App() {
   const [theme, setTheme] = useState<Theme>('system')
   const [active, setActive] = useState('library')
+  /** 书架数据（从 IndexedDB 读出） */
+  const [books, setBooks] = useState<BookRecord[]>([])
+  /** 拖拽文件悬停时的全屏提示 */
+  const [dragOver, setDragOver] = useState(false)
+  /** 隐藏的文件选择 input */
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // 主题切换：写入 <html data-theme="...">，CSS 变量随之生效
   useEffect(() => {
     const root = document.documentElement
     if (theme === 'system') root.removeAttribute('data-theme')
     else root.setAttribute('data-theme', theme)
+    // 原生窗口里隐藏 Web 版模拟交通灯，改用系统交通灯
     if ('__TAURI_INTERNALS__' in window) root.classList.add('tauri')
   }, [theme])
 
-  const cycleTheme = () => {
-    setTheme(t => (t === 'system' ? 'light' : t === 'light' ? 'dark' : 'system'))
-  }
+  // 首次挂载时加载书架
+  useEffect(() => {
+    getAllBooks().then(setBooks)
+  }, [])
+
+  /** 导入文件：逐个提取元数据 → 写入数据库 → 刷新书架 */
+  const importFiles = useCallback(async (fileList: FileList | File[]) => {
+    const files = Array.from(fileList)
+    for (const file of files) {
+      try {
+        const meta = await extractBookMeta(file)
+        const record: BookRecord = {
+          id: generateId(),
+          title: meta.title,
+          author: meta.author,
+          format: meta.format,
+          cover: meta.cover,
+          file: file, // File 是 Blob 的子类，可直接入库存
+          fileName: file.name,
+          addedAt: Date.now(),
+        }
+        await addBook(record)
+      } catch (err) {
+        console.error('导入失败：', file.name, err)
+      }
+    }
+    setBooks(await getAllBooks())
+  }, [])
+
+  // 全窗口拖拽导入：dragover 持续触发显示蒙层，drop 导入，dragleave（离开窗口）隐藏蒙层
+  useEffect(() => {
+    const onDragOver = (e: DragEvent) => {
+      e.preventDefault()
+      setDragOver(true)
+    }
+    const onDragLeave = (e: DragEvent) => {
+      // relatedTarget 为空说明指针已离开窗口，避免子元素间移动导致闪烁
+      if (!e.relatedTarget) setDragOver(false)
+    }
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault()
+      setDragOver(false)
+      if (e.dataTransfer?.files.length) void importFiles(e.dataTransfer.files)
+    }
+    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('dragleave', onDragLeave)
+    window.addEventListener('drop', onDrop)
+    return () => {
+      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('dragleave', onDragLeave)
+      window.removeEventListener('drop', onDrop)
+    }
+  }, [importFiles])
+
+  /** 删除一本书（带确认，防止误删整本书数据） */
+  const handleDelete = useCallback(async (book: BookRecord) => {
+    if (!window.confirm(`确定要从书架删除《${book.title}》吗？`)) return
+    await deleteBook(book.id)
+    setBooks(await getAllBooks())
+  }, [])
+
+  /** 点击书籍（功能②接入阅读器后生效） */
+  const handleOpen = useCallback((book: BookRecord) => {
+    console.log('打开书籍（待实现）：', book.title)
+  }, [])
 
   const themeIcon: IconName = theme === 'light' ? 'sun' : theme === 'dark' ? 'moon' : 'laptop'
-  const current = PLACEHOLDERS[active] ?? PLACEHOLDERS.library
 
   return (
     <div className="app">
+      {/* 隐藏的文件选择器：accept 限制为支持的格式，multiple 支持一次选多本 */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".epub,.txt,.pdf"
+        multiple
+        hidden
+        onChange={e => {
+          if (e.target.files?.length) void importFiles(e.target.files)
+          // 清空 value，保证同一文件可以重复选择
+          e.target.value = ''
+        }}
+      />
+
       <header className="titlebar" data-tauri-drag-region>
         <div className="traffic-lights" aria-hidden="true">
           <span className="dot close" />
@@ -121,17 +221,21 @@ export default function App() {
         </div>
         <div className="titlebar-title">oread</div>
         <div className="toolbar">
-          <button className="tool-btn" title="添加书籍 (Cmd+O)">
+          <button
+            className="tool-btn"
+            title="添加书籍 (Cmd+O)"
+            onClick={() => fileInputRef.current?.click()}
+          >
             <Icon name="plus" />
           </button>
-          <button className="tool-btn" title="搜索 (Cmd+F)">
+          <button className="tool-btn" title="搜索（开发中）">
             <Icon name="search" />
           </button>
           <span className="toolbar-separator" />
           <button
             className="tool-btn"
             title={`外观：${theme}（点击切换）`}
-            onClick={cycleTheme}
+            onClick={() => setTheme(t => (t === 'system' ? 'light' : t === 'light' ? 'dark' : 'system'))}
           >
             <Icon name={themeIcon} />
           </button>
@@ -164,15 +268,41 @@ export default function App() {
         </aside>
 
         <main className="content">
-          <div className="empty-state">
-            <div className="empty-icon">
-              <Icon name="books" size={44} />
-            </div>
-            <h1>{current.title}</h1>
-            <p>{current.hint}</p>
-          </div>
+          {active === 'library' ? (
+            books.length > 0 ? (
+              <Library books={books} onOpen={handleOpen} onDelete={handleDelete} />
+            ) : (
+              <div className="empty-state">
+                <div className="empty-icon">
+                  <Icon name="books" size={44} />
+                </div>
+                <h1>书架</h1>
+                <p>把书籍拖到这里，或点击左上角的「添加」按钮</p>
+              </div>
+            )
+          ) : (
+            (() => {
+              const current = PLACEHOLDERS[active] ?? PLACEHOLDERS.reading
+              return (
+                <div className="empty-state">
+                  <h1>{current.title}</h1>
+                  <p>{current.hint}</p>
+                </div>
+              )
+            })()
+          )}
         </main>
       </div>
+
+      {/* 拖拽导入的全屏提示蒙层 */}
+      {dragOver && (
+        <div className="drop-overlay">
+          <div className="drop-overlay-card">
+            <Icon name="plus" size={28} />
+            <span>松开以导入书籍</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
