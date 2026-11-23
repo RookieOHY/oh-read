@@ -14,7 +14,7 @@
  * 否则位图会一直驻留内存（内存优先约束）。
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { BookMetaLite } from '../../core/Book'
 import { loadAllProgress } from '../../core/progress'
 
@@ -41,18 +41,28 @@ function BookCard({
   onDelete: (book: BookMetaLite) => void
   onContextMenu: (e: React.MouseEvent, book: BookMetaLite) => void
 }) {
-  // 封面 object URL 用惰性初始化（挂载时创建、卸载时 revoke），
-  // 避免"effect 内同步 setState"的级联渲染模式
-  const [coverUrl] = useState<string | null>(() =>
-    book.cover ? URL.createObjectURL(book.cover) : null,
-  )
+  const imgRef = useRef<HTMLImageElement>(null)
+  /** 当前生效的封面 URL（onError 用它区分"旧 URL 被 revoke"与"真解码失败"） */
+  const currentUrlRef = useRef<string | null>(null)
+  /** 封面解码失败时退回文字封面，避免破图问号 */
+  const [coverFailed, setCoverFailed] = useState(false)
 
-  // 卸载时释放 object URL（内存优先约束：位图不驻留）
+  // 封面 URL 直接在 effect 里写到 DOM 节点上（而不是经 React state 传给 <img src>）：
+  // StrictMode 会跑「挂载→清理→再挂载」，若 URL 经 state 传递，第一次清理 revoke 掉的
+  // URL 可能恰好被 React 提交给 <img>，浏览器拿到失效 URL 就一直停在"未加载"状态
+  // （破图问号）。这里每次 setup 都重新 createObjectURL 并直接赋给 img.src，
+  // 保证 <img> 最终拿到的一定是有效 URL；cleanup 再释放。
   useEffect(() => {
+    if (!book.cover || !imgRef.current) return
+    const url = URL.createObjectURL(book.cover)
+    currentUrlRef.current = url
+    imgRef.current.src = url
+    // 卸载或封面变化时释放 object URL（内存优先约束：位图不驻留）
     return () => {
-      if (coverUrl) URL.revokeObjectURL(coverUrl)
+      URL.revokeObjectURL(url)
+      if (currentUrlRef.current === url) currentUrlRef.current = null
     }
-  }, [coverUrl])
+  }, [book.cover])
 
   // 无封面时用书名首字生成占位封面
   const initial = book.title.charAt(0).toUpperCase()
@@ -76,8 +86,20 @@ function BookCard({
       aria-label={`打开《${book.title}》`}
     >
       <div className="book-cover">
-        {coverUrl ? (
-          <img src={coverUrl} alt={book.title} loading="lazy" />
+        {book.cover && !coverFailed ? (
+          <img
+            ref={imgRef}
+            alt={book.title}
+            loading="lazy"
+            onError={() => {
+              // StrictMode 清理阶段 revoke 旧 URL 也会触发 error（此时 src 已换成新 URL），
+              // 忽略这类"过期错误"，只对当前生效 URL 的失败降级。
+              const img = imgRef.current
+              if (!img || (currentUrlRef.current && img.src !== currentUrlRef.current)) return
+              console.warn(`封面加载失败：《${book.title}》，改用文字封面`)
+              setCoverFailed(true)
+            }}
+          />
         ) : (
           <div className="book-cover-fallback" aria-hidden="true">{initial}</div>
         )}
